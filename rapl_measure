@@ -1,0 +1,119 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/time.h>
+
+// Path to Intel RAPL CPU energy file 
+// note: this is for Intel CPUs on Linux; untested with other architectures/OSes
+#define RAPL_CPU_PATH "/sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj"
+#define RESULTS_FILE  "results.csv"
+
+// -------------------------------------------------------------------------
+// Read current RAPL energy in microjoules
+// Returns -1 on failure
+// -------------------------------------------------------------------------
+long long read_rapl() {
+    FILE *f = fopen(RAPL_CPU_PATH, "r");
+    if (!f) {
+        fprintf(stderr,
+            "ERROR: Cannot read RAPL at %s\n"
+            "  -> Are you running as root (sudo)?\n"
+            "  -> Is this an Intel CPU on Linux?\n",
+            RAPL_CPU_PATH);
+        return -1;
+    }
+    long long energy;
+    fscanf(f, "%lld", &energy);
+    fclose(f);
+    return energy;
+}
+
+int main(int argc, char *argv[]) {
+    if (argc < 4) {
+        printf("Usage: ./rapl_measure <runs> <csv_file> <algorithm>\n");
+        printf("  algorithms: bubble | counting | merge | quick\n");
+        printf("Example: sudo ./rapl_measure 30 inputs/sorted_25000.csv merge\n");
+        return 1;
+    }
+
+    int    n_runs    = atoi(argv[1]);
+    char  *csv_file  = argv[2];
+    char  *algorithm = argv[3];
+
+    // Build the Java command
+    char command[512];
+    snprintf(command, sizeof(command),
+             "java sortingAlgorithms csv %s %s", csv_file, algorithm);
+
+    printf("=== RAPL Energy + Wall Time Measurement ===\n");
+    printf("Runs: %d | File: %s | Algorithm: %s\n", n_runs, csv_file, algorithm);
+    printf("Java command: %s\n", command);
+    printf("--------------------------------------------\n");
+
+    // Open results CSV in append mode
+    FILE *out = fopen(RESULTS_FILE, "a");
+    if (!out) {
+        fprintf(stderr, "ERROR: Cannot open %s for writing\n", RESULTS_FILE);
+        return 1;
+    }
+
+    // Write CSV header if file is empty
+    fseek(out, 0, SEEK_END);
+    if (ftell(out) == 0)
+        fprintf(out, "run,algorithm,csv_file,wall_time_ms,energy_j\n");
+
+    int valid_runs = 0;
+
+    for (int i = 0; i < n_runs; i++) {
+        struct timeval tvb, tva;
+
+        // --- Read wall time before (matches paper Figure 5) ---
+        gettimeofday(&tvb, 0);
+
+        // --- Read RAPL energy before ---
+        long long energy_before = read_rapl();
+        if (energy_before < 0) { fclose(out); return 1; }
+
+        // --- Execute Java sorting program ---
+        system(command);
+
+        // --- Read RAPL energy after ---
+        long long energy_after = read_rapl();
+        if (energy_after < 0) { fclose(out); return 1; }
+
+        // --- Read wall time after ---
+        gettimeofday(&tva, 0);
+
+        // Calculate wall time in ms (matches paper Figure 5 exactly)
+        long wall_time_ms = ((tva.tv_sec  - tvb.tv_sec)  * 1000000
+                           +  tva.tv_usec - tvb.tv_usec) / 1000;
+
+        // Handle RAPL 32-bit register overflow (known issue, noted in paper)
+        if (energy_after < energy_before) {
+            printf("Run %2d: WARNING — RAPL overflow detected, skipping run\n", i);
+            continue;
+        }
+
+        // Convert microjoules to joules
+        double energy_j = (energy_after - energy_before) / 1000000.0;
+
+        // Skip negative energy values (paper Section 3.6)
+        if (energy_j < 0) {
+            printf("Run %2d: WARNING — negative energy, skipping run\n", i);
+            continue;
+        }
+
+        printf("Run %2d | Wall time: %6ld ms | Energy: %.6f J\n",
+               i, wall_time_ms, energy_j);
+
+        fprintf(out, "%d,%s,%s,%ld,%.6f\n",
+                i, algorithm, csv_file, wall_time_ms, energy_j);
+
+        valid_runs++;
+    }
+
+    fclose(out);
+    printf("--------------------------------------------\n");
+    printf("Done. %d/%d valid runs saved to %s\n", valid_runs, n_runs, RESULTS_FILE);
+    return 0;
+}
