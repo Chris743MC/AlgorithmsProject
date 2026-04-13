@@ -4,6 +4,8 @@ import java.util.*;
 
 public class sortingAlgorithms {
 
+// The project keeps all four sorting implementations in one file so they can be benchmarked
+// under the same input and timing rules.
 // B u b b l e S o r t ( A )
 // f o r i = 0 t o A . l e n g t h − 1
 // f o r j = 0 A . l e n g t h − 2 − i
@@ -190,6 +192,7 @@ public class sortingAlgorithms {
     }
 
     private static long checksum(int[] arr) {
+        // A lightweight hash prevents the JIT or compiler from treating the work as unused.
         long hash = 1469598103934665603L;
         for (int value : arr) {
             hash ^= value;
@@ -199,6 +202,7 @@ public class sortingAlgorithms {
     }
 
     private static void benchmark(String name, Sorter sorter, int[] base, int warmupRuns, int measuredRuns) {
+        // Warmup runs let the JVM settle before timing the real measurements.
         long guard = 0L;
 
         for (int i = 0; i < warmupRuns; i++) {
@@ -224,6 +228,7 @@ public class sortingAlgorithms {
     private static void benchmarkDeepCopy(String name, Sorter sorter,
                                           int[] base, int repetitions,
                                           PrintWriter csvOut, String inputFile) {
+        // This mode matches the paper-style benchmark where each repetition sorts a fresh copy.
         long startTime = System.currentTimeMillis();
 
         for (int i = 0; i < repetitions; i++) {
@@ -267,6 +272,7 @@ public class sortingAlgorithms {
 
             String inputFile = args[1];
             String algorithm = args[2].toLowerCase();
+            // CSV mode benchmarks one algorithm at a time so results can be compared cleanly.
             int[] base = csvToArray(inputFile);
             int repetitions = algorithm.equals("bubble") ? 400 : 30;
 
