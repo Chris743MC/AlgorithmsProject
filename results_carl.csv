@@ -1,0 +1,5 @@
+algorithm,input_file,input_size,repetitions,wall_time_ms
+bubble,sample.csv,10000,400,26238
+counting,sample.csv,10000,30,13
+merge,sample.csv,10000,30,29
+quick,sample.csv,10000,30,16
