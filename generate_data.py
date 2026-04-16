@@ -1,12 +1,11 @@
-import argparse
 import csv
+import math
 import random
 
 
 def generate_values(size, pattern, min_value, max_value, seed):
     rng = random.Random(seed)
 
-    # Each pattern creates a different kind of benchmark input distribution.
     if pattern == "random":
         return [rng.randint(min_value, max_value) for _ in range(size)]
 
@@ -31,41 +30,54 @@ def generate_values(size, pattern, min_value, max_value, seed):
 def write_csv(path, values, header):
     with open(path, mode="w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        # A single-column header keeps the file simple for both readers.
         if header:
             writer.writerow([header])
         for value in values:
             writer.writerow([value])
 
 
-def main():
-    # Standardize patterns based on COMP20280 requirements
-    patterns = ["random", "sorted", "reverse", "nearly_sorted"]
-    
-    # Standardize sizes based on n = [100, ..., 10000] requirement
-    sizes = [100, 500, 1000, 2500, 5000, 7500, 10000]
+def generate_log_spaced_sizes(min_size, max_size, num_points):
+    sizes = [
+        int(round(min_size * (max_size / min_size) ** (i / (num_points - 1))))
+        for i in range(num_points)
+    ]
 
-    # Default settings for the benchmark data
+    # Remove accidental duplicates from rounding while preserving order
+    unique_sizes = []
+    seen = set()
+    for size in sizes:
+        if size not in seen:
+            unique_sizes.append(size)
+            seen.add(size)
+
+    return unique_sizes
+
+
+def main():
+    patterns = ["random", "sorted", "reverse", "nearly_sorted"]
+
+    min_size = 10_000
+    max_size = 1_000_000
+    num_points = 30
+
     min_val = 0
-    max_val = 10000
+    max_val = 10_000
     seed = 42
     header = "value"
 
+    sizes = generate_log_spaced_sizes(min_size, max_size, num_points)
+
+    print("Generating CSV benchmark files...")
+    print(f"Patterns: {patterns}")
+    print(f"Sizes ({len(sizes)} points): {sizes}")
+    print()
+
     for pattern in patterns:
         for size in sizes:
-            # Generate a unique filename like 'random_5000.csv'
             filename = f"{pattern}_{size}.csv"
-            
-            # Generate the list of integers
             values = generate_values(size, pattern, min_val, max_val, seed)
-            
-            # Write to the specific CSV file
             write_csv(filename, values, header)
-            
             print(f"Successfully created: {filename} (Size: {size})")
-
-if __name__ == "__main__":
-    main()
 
 
 if __name__ == "__main__":

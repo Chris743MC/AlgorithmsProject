@@ -65,21 +65,45 @@ def merge_sort(arr):
 
 
 def quick_sort(arr):
+    def median_of_three(low, high):
+        mid = (low + high) // 2
+
+        a = arr[low]
+        b = arr[mid]
+        c = arr[high]
+
+        if a <= b <= c or c <= b <= a:
+            return mid
+        elif b <= a <= c or c <= a <= b:
+            return low
+        else:
+            return high
+
     def partition(low, high):
+        pivot_index = median_of_three(low, high)
+        arr[pivot_index], arr[high] = arr[high], arr[pivot_index]
+
         pivot = arr[high]
         i = low - 1
         for j in range(low, high):
             if arr[j] <= pivot:
                 i += 1
                 arr[i], arr[j] = arr[j], arr[i]
+
         arr[i + 1], arr[high] = arr[high], arr[i + 1]
         return i + 1
 
     def quick_sort_impl(low, high):
-        if low < high:
+        while low < high:
             pi = partition(low, high)
-            quick_sort_impl(low, pi - 1)
-            quick_sort_impl(pi + 1, high)
+
+            # Recurse on smaller side first to reduce maximum recursion depth
+            if pi - low < high - pi:
+                quick_sort_impl(low, pi - 1)
+                low = pi + 1
+            else:
+                quick_sort_impl(pi + 1, high)
+                high = pi - 1
 
     quick_sort_impl(0, len(arr) - 1)
 
@@ -89,22 +113,18 @@ def csv_to_arr(file_path, column_index):
     col_idx = int(column_index)
 
     with open(file_path, mode="r", encoding="utf-8") as f:
-        # Read each row and keep only numeric values from the requested column.
-        # This makes the script tolerant of headers and mixed CSV content.
         reader = csv.reader(f)
         for row in reader:
             if col_idx < len(row):
                 try:
                     values.append(int(row[col_idx].replace('"', "").strip()))
                 except ValueError:
-                    # Ignore headers, blank cells, and any non-numeric rows.
                     continue
 
     return values
 
 
 def run_energy_benchmark(name, sorter, base_arr, runs):
-    # Track one algorithm separately so the energy and emissions numbers stay isolated.
     tracker = EmissionsTracker(
         project_name=f"{name}_benchmark",
         measure_power_secs=1,
@@ -115,8 +135,6 @@ def run_energy_benchmark(name, sorter, base_arr, runs):
     start = time.perf_counter()
     tracker.start()
 
-    # Reuse the same input data, but sort a fresh copy each time.
-    # That keeps each run fair and prevents one sort from affecting the next.
     for _ in range(runs):
         arr_copy = list(base_arr)
         sorter(arr_copy)
@@ -124,8 +142,6 @@ def run_energy_benchmark(name, sorter, base_arr, runs):
     emissions_kg = tracker.stop()
     elapsed = time.perf_counter() - start
 
-    # Some CodeCarbon versions expose energy data through final_emissions_data.
-    # If it is missing, fall back to NaN so the CSV output still stays valid.
     energy_kwh = None
     if getattr(tracker, "final_emissions_data", None) is not None:
         energy_kwh = tracker.final_emissions_data.energy_consumed
@@ -146,64 +162,82 @@ def run_energy_benchmark(name, sorter, base_arr, runs):
     }
 
 
+def get_sorter(name):
+    algorithms = {
+        "bubble": bubble_sort,
+        "counting": counting_sort,
+        "merge": merge_sort,
+        "quick": quick_sort,
+    }
+    return algorithms.get(name)
+
+
+def append_result(output_file, input_file, result):
+    write_header = False
+    try:
+        with open(output_file, "r", encoding="utf-8"):
+            pass
+    except FileNotFoundError:
+        write_header = True
+
+    with open(output_file, mode="a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        if write_header:
+            writer.writerow(
+                [
+                    "input_file",
+                    "algorithm",
+                    "input_size",
+                    "runs",
+                    "wall_time_s",
+                    "energy_kwh",
+                    "emissions_kgco2eq",
+                ]
+            )
+
+        writer.writerow(
+            [
+                input_file,
+                result["algorithm"],
+                result["input_size"],
+                result["runs"],
+                f"{result['wall_time_s']:.6f}",
+                f"{result['energy_kwh']:.12f}",
+                f"{result['emissions_kg']:.12f}",
+            ]
+        )
+
+
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python carbon.py <csv_file> <column_index> [runs]")
+    if len(sys.argv) < 4:
+        print("Usage: python carbon.py <csv_file> <column_index> <algorithm> [runs]")
         sys.exit(1)
 
     file_arg = sys.argv[1]
     col_arg = sys.argv[2]
-    runs = int(sys.argv[3]) if len(sys.argv) > 3 else 30
+    algorithm_name = sys.argv[3].lower()
+    runs = int(sys.argv[4]) if len(sys.argv) > 4 else 30
+
+    sorter = get_sorter(algorithm_name)
+    if sorter is None:
+        print("Unknown algorithm. Use: bubble, counting, merge, quick")
+        sys.exit(1)
 
     original_arr = csv_to_arr(file_arg, col_arg)
     if not original_arr:
         print("No numeric data found in the requested CSV column.")
         sys.exit(1)
 
-    # Measure each sorter separately so the energy numbers stay readable.
-    algorithms = [
-        ("bubble", bubble_sort),
-        ("counting", counting_sort),
-        ("merge", merge_sort),
-        ("quick", quick_sort),
-    ]
+    print(f"Measuring {algorithm_name} on {file_arg} ...")
+    result = run_energy_benchmark(algorithm_name, sorter, original_arr, runs)
 
-    print("Measuring energy usage per sorting algorithm...")
-    print(f"Input size: {len(original_arr)} | Runs per algorithm: {runs}")
-    print("---------------------------------------------------------")
+    print(
+        f"{algorithm_name:<10} time={result['wall_time_s']:.3f}s "
+        f"energy={result['energy_kwh']:.8f} kWh "
+        f"emissions={result['emissions_kg']:.8f} kgCO2eq"
+    )
 
-    results = []
-    for name, sorter in algorithms:
-        # Run the same wrapper for each algorithm so the output format stays identical.
-        result = run_energy_benchmark(name, sorter, original_arr, runs)
-        results.append(result)
-        print(
-            f"{name:<10} time={result['wall_time_s']:.3f}s "
-            f"energy={result['energy_kwh']:.8f} kWh "
-            f"emissions={result['emissions_kg']:.8f} kgCO2eq"
-        )
+    output_file = "combined_results.csv"
+    append_result(output_file, file_arg, result)
 
-    output_file = "carbon_results.csv"
-    with open(output_file, mode="w", newline="", encoding="utf-8") as f:
-        # Write a machine-readable summary so benchmark runs can be compared later.
-        writer = csv.writer(f)
-        writer.writerow([
-            "algorithm",
-            "input_size",
-            "runs",
-            "wall_time_s",
-            "energy_kwh",
-            "emissions_kgco2eq",
-        ])
-        for row in results:
-            writer.writerow([
-                row["algorithm"],
-                row["input_size"],
-                row["runs"],
-                f"{row['wall_time_s']:.6f}",
-                f"{row['energy_kwh']:.12f}",
-                f"{row['emissions_kg']:.12f}",
-            ])
-
-    print("---------------------------------------------------------")
-    print(f"Saved detailed results to {output_file}")
+    print(f"Saved result to {output_file}")

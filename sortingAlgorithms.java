@@ -149,23 +149,42 @@ public class sortingAlgorithms {
         }
     }
 
+    private static int medianOfThree(int[] arr, int low, int high) {
+        int mid = low + (high - low) / 2;
+
+        int a = arr[low];
+        int b = arr[mid];
+        int c = arr[high];
+
+        if ((a <= b && b <= c) || (c <= b && b <= a)) {
+            return mid;
+        } else if ((b <= a && a <= c) || (c <= a && a <= b)) {
+            return low;
+        } else {
+            return high;
+        }
+    }
+
     private static int partition(int[] arr, int low, int high) {
-        // Use the last element as the pivot
+        int pivotIndex = medianOfThree(arr, low, high);
+
+        int tempPivotSwap = arr[pivotIndex];
+        arr[pivotIndex] = arr[high];
+        arr[high] = tempPivotSwap;
+
         int pivot = arr[high];
-        int i = (low - 1); // Index of smaller element
+        int i = low - 1;
 
         for (int j = low; j < high; j++) {
-            // If current element is smaller than or equal to pivot
             if (arr[j] <= pivot) {
                 i++;
-                // Swap arr[i] and arr[j]
+
                 int temp = arr[i];
                 arr[i] = arr[j];
                 arr[j] = temp;
             }
         }
 
-        // Swap the pivot element with the element at i+1
         int temp = arr[i + 1];
         arr[i + 1] = arr[high];
         arr[high] = temp;

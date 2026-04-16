@@ -1,29 +1,59 @@
 #!/usr/bin/env bash
 
-# Define the exact patterns you used in your Python script
 patterns=("random" "sorted" "reverse" "nearly_sorted")
 
-# Delete old results so you start fresh
-rm -f results.csv
+OUTPUT="combined_results.csv"
+
+touch "$OUTPUT"
+
+already_done () {
+    file=$1
+    algo=$2
+
+    # Check if this file+algorithm combo already exists in CSV
+    grep -q "^$file,$algo," "$OUTPUT"
+}
 
 for p in "${patterns[@]}"; do
-    # Only pick files that start with the pattern (e.g., random_100.csv)
-    for file in ${p}_*.csv; do
+    bubble_count=0
+
+    for file in $(ls ${p}_*.csv 2>/dev/null | sort -V); do
         if [ -f "$file" ]; then
-            echo "Benchmarking project file: $file"
+            echo "Processing file: $file"
 
-            # Run the algorithms
-            java sortingAlgorithms csv "$file" merge
-            java sortingAlgorithms csv "$file" quick
-            java sortingAlgorithms csv "$file" counting
+            # MERGE
+            if ! already_done "$file" "merge"; then
+                python carbon.py "$file" 0 merge 30
+            else
+                echo "Skipping merge (already done)"
+            fi
 
-            # Determine line count to skip Bubble Sort on huge files
-            lines=$(wc -l < "$file")
-            if [ "$lines" -lt 5001 ]; then
-                java sortingAlgorithms csv "$file" bubble
+            # QUICK
+            if ! already_done "$file" "quick"; then
+                python carbon.py "$file" 0 quick 30
+            else
+                echo "Skipping quick (already done)"
+            fi
+
+            # COUNTING
+            if ! already_done "$file" "counting"; then
+                python carbon.py "$file" 0 counting 30
+            else
+                echo "Skipping counting (already done)"
+            fi
+
+            # BUBBLE (only first 10 per pattern)
+            if [ "$bubble_count" -lt 10 ]; then
+                if ! already_done "$file" "bubble"; then
+                    python carbon.py "$file" 0 bubble 5
+                    bubble_count=$((bubble_count + 1))
+                else
+                    echo "Skipping bubble (already done)"
+                    bubble_count=$((bubble_count + 1))
+                fi
             fi
         fi
     done
 done
 
-echo "Benchmark Complete! Open results.csv to see your data."
+echo "Resume benchmark complete!"
